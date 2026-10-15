@@ -131,6 +131,8 @@ select.speed{border:2px solid var(--line);border-radius:999px;padding:9px 14px;f
 .rec-state b{color:var(--red);font-size:16px;font-family:'Fredoka'}
 .meter{display:flex;gap:3px;align-items:flex-end;height:26px}
 .meter i{width:5px;background:var(--teal);border-radius:3px;height:4px;transition:height .08s}
+.quick-hide{display:none !important}
+.mode-row{display:flex;gap:8px;margin:0 0 8px;flex-wrap:wrap;align-items:center}
 .upload-btn{display:inline-flex;align-items:center;gap:9px;background:var(--card);border:2px solid var(--line);border-radius:999px;padding:12px 24px;font-family:'Fredoka';font-weight:600;font-size:15px;color:var(--ink)}
 .upload-btn:hover{border-color:var(--teal);color:var(--teal)}
 .up-sub{font-size:12.5px;color:var(--muted);font-weight:600}
@@ -216,7 +218,7 @@ select.speed{border:2px solid var(--line);border-radius:999px;padding:9px 14px;f
         <div class="step"><b>3</b>到「我的練習」錄音或上傳自己的錄音 → 按「開始比對」</div>
         <div class="step"><b>4</b>系統會把<strong>太快太慢、發音不清楚、漏讀</strong>的單字用顏色標出來，點單字可聽老師唸法</div>
       </div>
-      <p class="footnote">建議使用 Chrome 瀏覽器。第一次按「開始比對」時，頁面會下載 AI 語音辨識引擎（約 40MB，需連網），之後會快取在瀏覽器中。老師聲音示範：AI 合成（ElevenLabs）。</p>
+      <p class="footnote">比對有兩種模式：<b>快速比對</b>用 Chrome 內建語音辨識，免下載、按了就能用；<b>精確比對</b>（逐字速度分析、支援上傳音檔）第一次需下載 AI 引擎約 40MB——學校網路慢時，可先按「先下載比對引擎」在課前把引擎備妥（每台裝置一次），上課就不用再等。老師聲音示範：AI 合成（ElevenLabs）。</p>
     </section>
   </section>
 
@@ -253,6 +255,12 @@ select.speed{border:2px solid var(--line);border-radius:999px;padding:9px 14px;f
       <h3><svg class="ic" viewBox="0 0 24 24" style="color:var(--teal)"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm6-3a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.94V22h2v-3.06A8 8 0 0 0 20 11z"/></svg>
         我的練習 <span class="h3-badge">PRACTICE</span></h3>
       <p class="hint">照著老師的示範，<b>連續朗讀整幕</b>後錄音或上傳音檔，系統會幫你逐字比對。</p>
+      <div class="mode-row" role="group" aria-label="比對模式">
+        <button id="modeQuick" class="chip" style="--cc:#0FA3A3;--cc-bg:#E7F6F6" aria-pressed="false">⚡ 快速比對（免下載）</button>
+        <button id="modePrecise" class="chip" style="--cc:#B97E00;--cc-bg:#FFF3D6" aria-pressed="false">🎯 精確比對（含逐字速度分析）</button>
+        <button id="btn-prefetch" class="btn btn-ghost btn-sm hidden">先下載比對引擎</button>
+      </div>
+      <p class="hint" id="modeHint"></p>
       <div class="practice-grid">
         <div class="rec-box">
           <button id="btn-rec" class="rec-btn" aria-label="開始錄音">
@@ -262,7 +270,7 @@ select.speed{border:2px solid var(--line);border-radius:999px;padding:9px 14px;f
           <div class="rec-state" id="recState">按一下開始錄音</div>
           <div class="meter" id="recMeter"></div>
         </div>
-        <div class="up-box">
+        <div class="up-box" id="upBox">
           <label class="upload-btn">
             <svg class="ic" viewBox="0 0 24 24"><path d="M12 3 6 9h4v7h4V9h4zM5 18h14v2H5z"/></svg>
             上傳錄音檔
@@ -774,6 +782,7 @@ const SLOW_CUM = 1.5, SLOW_CUM_GRACE = 3.0, SLOW_DUR = 1.9, SLOW_DUR_GRACE = 0.1
 
 async function runCompare(){
   if(comparing) return;
+  if(compareMode === 'quick'){ setRecState('快速模式：按紅色錄音鈕朗讀，停止後自動比對', true); return; }
   if(!studentBlob){ setRecState('請先錄音或上傳錄音檔', true); return; }
   comparing = true;
   $('#btn-compare').disabled = true;
@@ -815,7 +824,7 @@ async function runCompare(){
   }
 }
 
-function renderResult(toks, stat){
+function renderResult(toks, stat, sEndOverride, quickNote){
   const panel = $('#resultPanel');
   const total = toks.length;
   const scored = okN0 = 0;
@@ -827,7 +836,7 @@ function renderResult(toks, stat){
     if(!e){ let d = 0; sceneLines(curScene).forEach(l => d += l.dur||0); e = d; }
     return e;
   })();
-  const sEnd = stat.recs.length ? Math.max(...stat.recs.map(r => r.e||0)) : (studentDur||0);
+  const sEnd = sEndOverride != null ? sEndOverride : (stat.recs.length ? Math.max(...stat.recs.map(r => r.e||0)) : (studentDur||0));
   const ratio = tEnd > 0 ? sEnd / tEnd : 1;
   let speedCls, speedTxt;
   if(ratio > 1.3){ speedCls = 'bad'; speedTxt = '速度偏慢'; }
@@ -869,8 +878,85 @@ function renderResult(toks, stat){
     mtext.appendChild(document.createTextNode(' '));
   });
 
+  panel.querySelector('.tip').textContent = quickNote
+    ? '⚡ 快速比對：速度以整幕總長估算；點單字可聽老師的唸法。'
+    : '💡 點任何有顏色的單字 → 從那個字開始聽老師的唸法。';
   panel.classList.remove('hidden');
   panel.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+
+/* ================= quick compare (browser built-in ASR, no download) ================= */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let compareMode = 'precise', srRec = null, srWords = [], srStart = 0, srTimer = null, srRunning = false;
+
+function setMode(m){
+  compareMode = m;
+  if(compareMode === 'quick' && !SR) compareMode = 'precise';
+  const quick = compareMode === 'quick';
+  $('#modeQuick').classList.toggle('active', quick);
+  $('#modePrecise').classList.toggle('active', !quick);
+  $('#modeQuick').setAttribute('aria-pressed', quick);
+  $('#modePrecise').setAttribute('aria-pressed', !quick);
+  $('#upBox').classList.toggle('quick-hide', quick);
+  $('#btn-prefetch').classList.toggle('hidden', quick);
+  $('#stuStrip').classList.toggle('quick-hide', quick);
+  $('#modeHint').textContent = quick
+    ? '免下載：按紅色錄音鈕後直接朗讀整幕，按一下停止就自動比對（速度為整幕總長估算）。'
+    : '先錄音或上傳音檔，再按「開始比對」— 有逐字速度分析；第一次使用需下載引擎，可用「先下載比對引擎」課前備妥。';
+}
+
+function startQuick(){
+  stopPlayback(); clearStudent();
+  srWords = [];
+  try{ srRec = new SR(); }
+  catch(e){ setRecState('此瀏覽器不支援內建語音辨識，請改用 Chrome，或切到精確模式', true); return; }
+  srRec.lang = 'en-US'; srRec.continuous = true; srRec.interimResults = false;
+  srRec.onresult = e => {
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      if(e.results[i].isFinal)
+        srWords.push(...e.results[i][0].transcript.trim().split(/\s+/).filter(Boolean));
+    }
+  };
+  srRec.onerror = e => {
+    if(e.error === 'not-allowed') setRecState('無法存取麥克風，請檢查瀏覽器權限', true);
+    else if(e.error === 'network') setRecState('內建語音辨識連不上網（學校網路可能擋語音服務），請改用「精確比對」', true);
+  };
+  srRec.onend = () => { if(srRunning){ try{ srRec.start(); }catch(_){} } };
+  srStart = Date.now(); srRunning = true;
+  try{ srRec.start(); }catch(e){ setRecState('啟動失敗，請再按一次', true); return; }
+  $('#btn-rec').classList.add('recording');
+  $('#recState').innerHTML = '聆聽中…照著台詞朗讀整幕（<b id="recTime">0:00</b>）';
+  clearInterval(srTimer);
+  srTimer = setInterval(() => {
+    const t = $('#recTime'); if(t) t.textContent = fmt((Date.now() - srStart)/1000);
+  }, 250);
+}
+
+function stopQuick(){
+  srRunning = false;
+  clearInterval(srTimer);
+  if(srRec){ srRec.onend = null; try{ srRec.stop(); }catch(_){}}
+  $('#btn-rec').classList.remove('recording');
+  $$('#recMeter i').forEach(b => b.style.height = '4px');
+  const sec = (Date.now() - srStart)/1000;
+  if(!srWords.length){ setRecState('沒有聽到任何單字（請確認已授權麥克風、在安靜處朗讀）', true); return; }
+  setRecState(`讀完 ${fmt(sec)}，比對中…`);
+  quickCompare(sec, srWords);
+}
+
+function quickCompare(sec, rawWords){
+  const toks = tokenizeScene(curScene);
+  const recs = rawWords.map((w,i) => ({ t:w, s:i, e:i }));
+  const al = alignTokens(toks.map(t => t.n), recs.map(r => norm(r.t)));
+  let okN = 0, softN = 0, missN = 0;
+  toks.forEach((tk, k) => {
+    const a = al[k];
+    if(!a || a.gi < 0){ tk.mark = 'miss'; missN++; return; }
+    if(a.kind === 'fuzzy'){ tk.mark = 'soft'; softN++; } else { tk.mark = 'ok'; okN++; }
+    tk.st = null;
+  });
+  renderResult(toks, { okN, softN, slowN:0, missN, recs:[], duration:sec }, sec, true);
 }
 
 /* ================= wire up ================= */
@@ -887,7 +973,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if(curAudio) curAudio.playbackRate = speed;
   };
   $('#btn-rec').onclick = () => {
-    if($('#btn-rec').classList.contains('recording')) stopRec(); else startRec();
+    const recording = $('#btn-rec').classList.contains('recording');
+    if(compareMode === 'quick'){ if(recording) stopQuick(); else startQuick(); }
+    else { if(recording) stopRec(); else startRec(); }
+  };
+  $('#modeQuick').onclick = () => setMode('quick');
+  $('#modePrecise').onclick = () => setMode('precise');
+  $('#btn-prefetch').onclick = async () => {
+    $('#btn-prefetch').disabled = true;
+    try{
+      await ensureEngine();
+      engineNote('引擎已快取完成，之後按「開始比對」不用再下載', false, false);
+    }catch(e){}
+    $('#btn-prefetch').disabled = false;
   };
   $('#fileUp').onchange = e => {
     const f = e.target.files && e.target.files[0];
@@ -900,6 +998,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-compare').onclick = runCompare;
   $('#btn-clear-rec').onclick = clearStudent;
   $('#btn-scroll-practice').onclick = () => $('#practiceBox').scrollIntoView({ behavior:'smooth', block:'start' });
+  setMode(SR ? 'quick' : 'precise');
 });
 
 </script>
