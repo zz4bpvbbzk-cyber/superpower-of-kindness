@@ -7,9 +7,9 @@
 
 | 路徑 | 內容 |
 |---|---|
-| `index.html` | **精簡版**（73 句、全劇約 4 分 20 秒）— 主要使用版本 |
-| `full/index.html` | 完整版（90 句、約 5 分 20 秒） |
-| `docs/The_Superpower_of_Kindness_精簡版劇本.docx` | 精簡版劇本 Word（刪減處紅色刪除線標記） |
+| `index.html` | **1015 修訂版**（85 句、全劑約 4 分 56 秒）— 主要使用版本 |
+| `full/index.html` | 1012 原始完整版（90 句、約 5 分 22 秒） |
+| `docs/The_Superpower_of_Kindness_精簡版劇本.docx` | 先前 73 句精簡提案的劇本 Word（僅供參考） |
 
 ## 功能
 
